@@ -239,6 +239,8 @@ class Trajectory:
         Args:
             predictors: dictionary mapping model names to ModelWrapper objects
         """
+        generated_models = []
+        errors = []
         for model_name, predictor in predictors.items():
             try:
                 # we pass this specific Trajectory directly to the conformal predictor
@@ -248,8 +250,16 @@ class Trajectory:
                         "lower": all_lower[i],
                         "upper": all_upper[i],
                     }
+                generated_models.append(model_name)
             except Exception as e:
-                print(f"Error predicting with {model_name}: {e}")
+                errors.append(f"{model_name}: {e}")
+
+        if errors:
+            raise RuntimeError(
+                "Some conformal predictions failed. "
+                + "Errors: "
+                + "; ".join(errors)
+            )
 
     def get_predictions_at_timestamp(
         self, timestamp: datetime.datetime, model_name: str

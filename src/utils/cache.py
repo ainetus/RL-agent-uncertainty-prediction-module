@@ -7,7 +7,7 @@ import pickle
 from typing import TYPE_CHECKING
 
 import config
-from utils.global_utils import ensure_dir, get_dir_name
+from utils.global_utils import ensure_dir, get_dir_name, resolve_config_path
 
 if TYPE_CHECKING:
     from utils.data_structures import TrajectoryManager
@@ -53,13 +53,19 @@ class DataManager:
     Data manager for tracking and caching calibrated line episodes and trained models
     """
 
+    HASH_LENGTH = 24
+
     def __init__(self):
-        self.cache_dir = config.CALIBRATION_CACHE_DIR
-        self.models_cache_dir = config.MODELS_CACHE_DIR
+        self.cache_dir = resolve_config_path(config.CALIBRATION_CACHE_DIR)
+        self.models_cache_dir = resolve_config_path(config.MODELS_CACHE_DIR)
 
         ensure_dir(self.cache_dir)
         ensure_dir(self.models_cache_dir)
         self._attacked_lines: list[int] = []
+
+    @classmethod
+    def _hash_key(cls, key: str) -> str:
+        return hashlib.sha256(key.encode("utf-8")).hexdigest()[: cls.HASH_LENGTH]
 
     def set_attacked_lines(self, attacked_lines: list[int]) -> None:
         """
@@ -80,13 +86,12 @@ class DataManager:
         return self._attacked_lines
 
     @staticmethod
-    def _generate_calibration_filename() -> str:
+    def _generate_calibration_key() -> str:
         """
-        generates unique cache filename based on config parameters
+        Generates a unique cache key based on config parameters.
 
         Returns:
-            string filename that works as a hash for a certain configuration, so we don't need to re-run cached episodes
-            that produce exactly the same results (deterministic behaviour in Grid2Op)
+            String key that includes all relevant configuration values.
         """
         mode = "ensemble" if config.ENSEMBLE_MODE else "single"
 
@@ -101,7 +106,7 @@ class DataManager:
         # if a particular line was attacked or not
         bitmask = lines_to_bitmask(attacked_lines)
 
-        filename = (
+        return (
             f"calib_{mode}_"
             f"chronic{config.BASE_CHRONIC}_"
             f"horizon{config.HORIZON}_"
@@ -119,14 +124,16 @@ class DataManager:
             f"fn{config.FORECASTER_CLASS}"
         )
 
-        # if the filename is too large, then it will fail to save the file
-        # to prevent this we hash the filename and return the hash
-        if len(filename) > 200:
-            filename = (
-                f"calib_{mode}_" + hashlib.sha256(filename.encode("utf-8")).hexdigest()
-            )
+    @classmethod
+    def _generate_calibration_filename(cls) -> str:
+        """
+        Generates a short deterministic cache filename prefix.
 
-        return filename
+        The full configuration is kept in the hash key, but not in the filename,
+        so cache paths stay below Windows path-length limits.
+        """
+        mode = "ensemble" if config.ENSEMBLE_MODE else "single"
+        return f"calib_{mode}_{cls._hash_key(cls._generate_calibration_key())}"
 
     def _get_episode_cache_path(
         self, attacked_lines: list[int], episode_idx: int
@@ -143,13 +150,7 @@ class DataManager:
         """
         filename = self._generate_calibration_filename()
         bitmask = lines_to_bitmask(attacked_lines)
-        base = f"{filename}_attacked{bitmask}_episode_{episode_idx}"
-        path = base + ".pkl"
-
-        # if the filename is too large, then it will fail to save the file
-        # to prevent this we hash the filename and return the hash
-        if len(path) > 200:
-            path = hashlib.sha256(base.encode("utf-8")).hexdigest() + ".pkl"
+        path = f"{filename}_attacked{bitmask}_episode_{episode_idx}.pkl"
 
         return os.path.join(self.cache_dir, path)
 
@@ -239,9 +240,6 @@ class DataManager:
         Returns:
             String filename with all relevant configuration parameters
         """
-        # we use the same base filename as calibration episodes
-        base_filename = self._generate_calibration_filename()
-
         # just to clean so it uses underscores
         model_name = model_name.replace(" ", "_").replace("/", "_")
 
@@ -249,12 +247,13 @@ class DataManager:
         # removing trailing zeros and the dot if it is an integer
         alpha_str = f"{alpha:.4f}".rstrip("0").rstrip(".")
 
-        # model-specific info: model name + number of episodes + alpha
-        filename = (
-            f"{base_filename}_model_{model_name}_episodes{n_episodes}_alpha{alpha_str}"
+        key = (
+            f"{self._generate_calibration_key()}_"
+            f"model{model_name}_episodes{n_episodes}_alpha{alpha_str}"
         )
+        digest = self._hash_key(key)
 
-        return filename
+        return f"model_{model_name}_alpha{alpha_str}_{digest}"
 
     def _get_model_cache_path(
         self, model_name: str, n_episodes: int, alpha: float

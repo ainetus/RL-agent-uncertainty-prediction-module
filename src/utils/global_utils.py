@@ -19,9 +19,10 @@ if str(main_root) not in sys.path:
     sys.path.insert(0, str(main_root))
 
 from functools import cache
+import importlib
 from typing import Tuple
 
-from utils.environment import create_environment
+import config
 
 
 @cache
@@ -33,6 +34,8 @@ def get_env_details() -> Tuple[int, list[str]]:
     Returns:
         tuple: (n_lines, line_names) representing the number of lines (int), and the line names List[str], respectively
     """
+    from utils.environment import create_environment
+
     temp_env, _ = create_environment(42, [])
     n_lines = len(temp_env.name_line)
     assert n_lines == temp_env.n_line
@@ -48,15 +51,27 @@ def get_forecaster_model():
     Returns:
         The forecaster object
     """
-    import importlib
-
-    import config
 
     module = importlib.import_module(config.FORECASTER_MODULE)
     forecaster_class = getattr(module, config.FORECASTER_CLASS)
-    forecaster = forecaster_class(config.FORECASTER_PATH)
+    forecaster = forecaster_class(resolve_config_path(config.FORECASTER_PATH))
 
     return forecaster
+
+
+def resolve_config_path(path: str) -> str:
+    """
+    Resolve a path from config.py against the src directory.
+
+    This keeps the documented config values stable while allowing scripts to be
+    launched either from src/ or from the repository root.
+    """
+    path_obj = Path(path)
+    if path_obj.is_absolute():
+        return str(path_obj)
+
+    config_dir = Path(config.__file__).parent
+    return str((config_dir / path_obj).resolve())
 
 
 def ensure_dir(path: str, folder: str | None = None) -> str:

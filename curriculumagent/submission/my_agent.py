@@ -108,8 +108,12 @@ class MyAgent(BaseAgent):
             self.model: Model = tf.keras.models.load_model(model_path, compile=False)
             self.model.compile()
 
-        except (IndexError, AttributeError):
-            # Loader of older model:
+        except (IndexError, AttributeError, OSError) as exc:
+            # Loader for older models and SavedModels that Keras cannot deserialize.
+            logging.warning(
+                "Keras model loading failed with %s. Falling back to tf.saved_model.load.",
+                exc,
+            )
             self.model: AutoTrackable = tf.saved_model.load(str(model_path))
 
         self.scaler = scaler
@@ -398,23 +402,50 @@ class MyAgent(BaseAgent):
             )
 
         f = self.model.signatures["serving_default"]
-        out = f(
-            observations=tf.convert_to_tensor(model_input.reshape(1, -1)),
-            timestep=tf.convert_to_tensor(0, dtype=tf.int64),
-            is_training=tf.convert_to_tensor(False),
+        model_input_tensor = tf.convert_to_tensor(
+            model_input.reshape(1, -1), dtype=tf.float32
         )
+
+        try:
+            out = f(
+                observations=model_input_tensor,
+                timestep=tf.convert_to_tensor(0, dtype=tf.int64),
+                is_training=tf.convert_to_tensor(False),
+            )
+        except TypeError:
+            # Keras SavedModels usually only expose the observations input.
+            out = f(observations=model_input_tensor)
+
+        if "action_dist_inputs" in out:
+            action_logits = out["action_dist_inputs"]
+        elif "action_out" in out:
+            action_logits = out["action_out"]
+        else:
+            action_logits = None
+            for key, value in out.items():
+                if value.shape.rank is not None and value.shape[-1] == len(self.actions):
+                    action_logits = value
+                    logging.warning(
+                        "Using SavedModel output '%s' as action logits.", key
+                    )
+                    break
+            if action_logits is None:
+                raise KeyError(
+                    "Could not find action logits in SavedModel outputs. "
+                    f"Available outputs: {list(out.keys())}"
+                )
 
         # Collect the softmax over all actions
         try:
             prob_of_action = (
-                tf.nn.softmax(out["action_dist_inputs"])
+                tf.nn.softmax(action_logits)
                 .numpy()
                 .reshape(
                     -1,
                 )
             )
         except AttributeError:
-            poa = tf.nn.softmax(out["action_dist_inputs"])
+            poa = tf.nn.softmax(action_logits)
             prob_of_action = poa.eval(session=tf.compat.v1.Session()).reshape(
                 -1,
             )

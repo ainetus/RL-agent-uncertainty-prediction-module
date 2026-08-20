@@ -74,6 +74,17 @@ class ModelWrapper:
         else:
             self._fit_single_mode()
 
+        if not self.is_trained():
+            raise RuntimeError(f"No trained predictor was created for {self.model_name}")
+
+    def is_trained(self) -> bool:
+        """
+        Checks whether this wrapper contains a fitted conformal predictor.
+        """
+        if self.is_ensemble:
+            return bool(self.line_models)
+        return self.single_model is not None
+
     def _fit_single_mode(self) -> None:
         """
         Trains a single model in which some of the lines (possibly none)
@@ -96,6 +107,8 @@ class ModelWrapper:
         model = self._compute_fn(
             prepared_data, self.n_lines, self.alpha, **model_kwargs
         )
+        if model is None:
+            raise RuntimeError(f"Model creation returned None for {self.model_name}")
 
         self.single_model = model
 
@@ -129,6 +142,10 @@ class ModelWrapper:
             model = self._compute_fn(
                 calib_data, self.n_lines, self.alpha, **model_kwargs
             )
+            if model is None:
+                raise RuntimeError(
+                    f"Model creation returned None for {self.model_name} line {line_number}"
+                )
 
             self.line_models[line_number] = model
 

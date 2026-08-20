@@ -3,7 +3,7 @@
 A framework for using CP (Conformal Prediction) models to provide intervals of uncertainty around point
 forecasts in Grid2Op.
 
-Adittionally provides the implementation of a STL (Signal Temporal Logic) rule. See [STL README](./stl_rules/README.md).
+Additionally provides the implementation of a STL (Signal Temporal Logic) rule. See [STL README](./stl_rules/README.md).
 
 ## Overview
 
@@ -92,7 +92,33 @@ See [forecasters/hbgb_14.py](./forecasters/hbgb_14.py) or [forecasters/hbgb_36.p
 
 ## Usage
 
-Configuration is done through `config.py`. The main parameters are:
+Configuration is selected through `config.py`, which loads one of the plain Python
+configuration files:
+
+```bash
+python main.py                 # full configuration
+python main.py --config full   # explicit full configuration
+python main.py --config smoke  # quick end-to-end smoke test
+```
+
+You can also select the smoke configuration with an environment variable:
+
+```bash
+CP_CONFIG=smoke python main.py
+```
+
+In PowerShell, use:
+
+```powershell
+$env:CP_CONFIG = "smoke"
+python main.py
+```
+
+Use `config_full.py` for normal experiments and `config_smoke.py` for quick validation.
+Paths such as `OUTPUT_DIR`, `MODEL_PATH`, and `FORECASTER_PATH` are resolved relative to
+the `src` configuration directory.
+
+The main parameters are:
 
 - `ALPHA` - significance level(s) for conformal prediction (can be a list for multi-alpha runs - runs the simulation once for each alpha in the list)
 
@@ -104,7 +130,7 @@ Configuration is done through `config.py`. The main parameters are:
 
 - `IGNORE_CACHE_CALIBRATION` - Allows to ignore calibration episodes, overwriting them with new data.
 
-- `IGNORE_CACHE_MODELS` - Allows to ignore trained models (if they exists in the conditions) and overwritting them once a new training finishes.
+- `IGNORE_CACHE_MODELS` - Allows to ignore trained models (if they exist in the conditions) and overwriting them once a new training finishes.
 
 - `MODELS` - which conformal models to enable
 
@@ -129,7 +155,7 @@ Configuration is done through `config.py`. The main parameters are:
 Results are saved to `OUTPUT_DIR`, and plots are automatically generated if `AUTO_GEN_PLOTS` is enabled.
 If `AUTO_GEN_PLOTS` is disabled, the plots can still be generated. Check `plotting/` folder.
 
-There are more paramenters in this file, that must be changed in order to change the simulation.
+There are more parameters in this file that must be changed in order to change the simulation.
 
 When configuration is chosen, we save it and run the following command:
 

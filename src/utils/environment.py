@@ -1,4 +1,6 @@
 import datetime
+import os
+from pathlib import Path
 
 import grid2op
 from grid2op.Action import BaseAction, PowerlineSetAction
@@ -8,6 +10,45 @@ from lightsim2grid import LightSimBackend
 
 import config
 from curriculumagent.baseline.baseline import CurriculumAgent
+from utils.global_utils import resolve_config_path
+
+
+_REPORTED_GRID2OP_DATA: set[str] = set()
+
+
+def _get_grid2op_data_paths() -> list[Path]:
+    data_paths = []
+    for env_var in ("GRID2OP_DATA_PATH", "GRID2OP_DATA"):
+        env_value = os.environ.get(env_var)
+        if env_value:
+            data_paths.append(Path(env_value).expanduser())
+
+    data_paths.extend(
+        [
+            Path("~/data_grid2op").expanduser(),
+            Path("~/.grid2op/data").expanduser(),
+        ]
+    )
+
+    return data_paths
+
+
+def _report_grid2op_data_status(env_name: str) -> None:
+    if env_name in _REPORTED_GRID2OP_DATA:
+        return
+
+    _REPORTED_GRID2OP_DATA.add(env_name)
+    data_paths = _get_grid2op_data_paths()
+    env_paths = [data_path / env_name for data_path in data_paths]
+
+    for env_path in env_paths:
+        if env_path.exists():
+            print(f"Grid2Op data found for {env_name}; using existing local data.")
+            return
+
+    searched_paths = ", ".join(str(path) for path in env_paths)
+    print(f"Grid2Op data for {env_name} was not found locally; Grid2Op may download it now.")
+    print(f"Checked Grid2Op data paths: {searched_paths}")
 
 
 # NOTE: When creating with another agent/forecasting model
@@ -29,6 +70,7 @@ def create_environment(
     """
 
     print(f"Initializing Grid2Op environment: {config.ENV_NAME} with seed {env_seed}")
+    _report_grid2op_data_status(config.ENV_NAME)
 
     if not lines_attacked:
         env = grid2op.make(
@@ -56,7 +98,7 @@ def create_environment(
         observation_space=env.observation_space,
         name=config.AGENT_NAME,
     )
-    agent.load(config.MODEL_PATH)
+    agent.load(resolve_config_path(config.MODEL_PATH))
 
     return env, agent
 

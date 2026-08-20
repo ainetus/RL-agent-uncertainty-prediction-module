@@ -1,8 +1,6 @@
-from utils.global_utils import ensure_dir, get_env_details, ignore_warnings
-
-ignore_warnings()
-
+import argparse
 import os
+import sys
 
 # WARNING: This environment variable is important, do not remove!
 # this prevents OpenMP from using multiple threads per worker
@@ -11,15 +9,41 @@ os.environ["OMP_NUM_THREADS"] = "1"
 
 import time
 
+
+def _select_config_from_cli() -> None:
+    """
+    Reads --config before importing config-dependent modules.
+    """
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--config", choices=("full", "smoke"), default="full")
+    args, remaining = parser.parse_known_args()
+
+    if args.config is not None:
+        os.environ["CP_CONFIG"] = args.config
+
+    # Keep sys.argv clean for any later argparse users.
+    sys.argv = [sys.argv[0], *remaining]
+
+
+_select_config_from_cli()
+
 import config
 from analysis import generate_csvs
 from calibration import run_ensemble_calibration, run_single_calibration
 from plotting_script import start_all_plots
 from testing import run_test_episodes
 from training import run_model_training, run_stl_training
+from utils.global_utils import (
+    ensure_dir,
+    get_env_details,
+    ignore_warnings,
+    resolve_config_path,
+)
 from utils.model_wrapper import get_enabled_models
 from utils.parallel import setup_multiprocessing
 from utils.stl_wrapper import get_enabled_stl_rules
+
+ignore_warnings()
 
 
 def run_conformal_simulation(
@@ -36,7 +60,7 @@ def run_conformal_simulation(
 
     # Setup output directory
     ensure_dir(output_dir)
-    ensure_dir(config.CALIBRATION_CACHE_DIR)
+    ensure_dir(resolve_config_path(config.CALIBRATION_CACHE_DIR))
 
     # Get environment info and validate configuration
     n_lines, line_names = get_env_details()
@@ -94,13 +118,14 @@ def run_all_alphas(all_alphas: list[float]) -> None:
         all_alphas: List of floats each representing one alpha for which we want to run the simulation
     """
     start_time = time.time()
+    output_root = resolve_config_path(config.OUTPUT_DIR)
 
     for alpha in all_alphas:
         print(f"now running alpha={alpha}")
 
         # we create alpha_* folder (it's important not to change this name because
         # it is used for aggregation)
-        output_dir = os.path.join(config.OUTPUT_DIR, f"alpha_{alpha}")
+        output_dir = os.path.join(output_root, f"alpha_{alpha}")
 
         run_conformal_simulation(
             alpha=alpha,
@@ -109,10 +134,12 @@ def run_all_alphas(all_alphas: list[float]) -> None:
 
     # starts all plots if they are to be generated during simulation
     if config.AUTO_GEN_PLOTS:
-        start_all_plots(config.OUTPUT_DIR)
+        start_all_plots(output_root)
 
     total_time = (time.time() - start_time) / 60
     print(f"Simulation is finished. Took: {total_time:.2f} minutes")
+    print("Simulation completed successfully.")
+    print(f"Results were saved in: {output_root}")
 
 
 if __name__ == "__main__":

@@ -245,6 +245,8 @@ def train_model_from_storage(
     """
     model = ModelWrapper(model_name, n_lines, alpha, data_manager)
     model.fit()
+    if not model.is_trained():
+        raise RuntimeError(f"{model_name} did not produce a trained predictor")
     return model
 
 
@@ -286,11 +288,11 @@ def run_model_training(
                     "Model was cached before, but IGNORE_CACHE_MODELS is set to true in the config file"
                 )
                 models_to_train.append(model_name)
-            elif model is not None:
+            elif model is not None and model.is_trained():
                 cached_models[model_name] = model
                 print(f"{model_name}: Successfully loaded from cache")
             else:
-                print(f"{model_name}: Failed to load, will retrain")
+                print(f"{model_name}: Cached model is missing or untrained, will retrain")
                 models_to_train.append(model_name)
         else:
             print(f"{model_name}: Not in cache, will train")
@@ -317,11 +319,19 @@ def run_model_training(
 
         # Collecting results (models already saved by worker in the cache files)
         for result in results:
-            if result.success:
+            if result.success and result.trained_model is not None:
                 newly_trained[result.model_name] = result.trained_model
 
     # merging both the cached and trained models
     predictors = cached_models | newly_trained
+
+    missing_models = [name for name in enabled_models if name not in predictors]
+    if missing_models:
+        raise RuntimeError(
+            "Conformal model training failed for: "
+            + ", ".join(missing_models)
+            + ". Check calibration cache generation before running testing/plotting."
+        )
 
     return predictors
 

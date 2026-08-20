@@ -1,0 +1,32 @@
+.git
+.agents
+.codex
+.idea
+.md_images
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.DS_Store
+Thumbs.db
+
+# Local Python environments
+.venv/
+venv/
+env/
+ENV/
+
+# Generated experiment state. These should be mounted at runtime instead.
+CACHE/
+RESULTS/
+src/CACHE/
+src/RESULTS/
+docker-cache/
+docker-output/
+
+# Local Docker/env files
+.env

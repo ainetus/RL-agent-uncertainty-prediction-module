@@ -126,6 +126,32 @@ def _get_path(folder: str, filename: str, check_exists: bool = False) -> str | N
     return path
 
 
+def _get_models_with_interval_data(
+    timeseries_df: pd.DataFrame, model_names: list[str]
+) -> list[str]:
+    """
+    Returns models that have lower and upper interval columns in timeseries data.
+    """
+    models_with_data = []
+    missing_models = []
+
+    for model in model_names:
+        lower_col = f"{model}_lower_bound"
+        upper_col = f"{model}_upper_bound"
+        if lower_col in timeseries_df.columns and upper_col in timeseries_df.columns:
+            models_with_data.append(model)
+        else:
+            missing_models.append(model)
+
+    if missing_models:
+        print(
+            "Skipping conformal plot data for models without interval columns: "
+            + ", ".join(missing_models)
+        )
+
+    return models_with_data
+
+
 def collect_tasks_for_folder(
     csv_folder: str, plots_folder: str, outputs: dict[str, str]
 ) -> list[PlottingTask]:
@@ -172,6 +198,11 @@ def collect_tasks_for_folder(
 
     ts_csv = _get_path(csv_folder, "timeseries.csv", check_exists=True)
     ts_df = load_timeseries_data(ts_csv) if ts_csv else None
+    interval_model_names = (
+        _get_models_with_interval_data(ts_df, model_names)
+        if ts_df is not None
+        else []
+    )
 
     horizon_csv = _get_path(csv_folder, "conformal_data_horizon.csv", check_exists=True)
     horizon_df = load_csv(horizon_csv)
@@ -181,7 +212,15 @@ def collect_tasks_for_folder(
         tasks.append(PlottingTask(name, func, args, kwargs))
 
     # comparison plots (coverage, width, action_inf_coverage by power line)
-    if not comp_df.empty:
+    metric_cols = [
+        col
+        for col in ["coverage", "width", "action_inf_coverage"]
+        if col in comp_df.columns
+    ]
+    has_metric_data = (
+        not comp_df.empty and bool(metric_cols) and comp_df[metric_cols].notna().any().any()
+    )
+    if has_metric_data:
         output_path = os.path.join(plots_folder, outputs["comparison"])
         add_task(
             "Comparison Plots",
@@ -191,9 +230,11 @@ def collect_tasks_for_folder(
             target_coverage,
             output_path,
         )
+    elif not comp_df.empty:
+        print(f"Skipping comparison plots: no numeric conformal metrics in {comp_csv}")
 
     # timeseries plots (all models, individual) and conformal plots like stl safety
-    if ts_df is not None:
+    if ts_df is not None and interval_model_names:
         # all models grid
         output_path = os.path.join(plots_folder, outputs["timeseries"])
         add_task(
@@ -201,7 +242,7 @@ def collect_tasks_for_folder(
             all_models_plots,
             ts_df,
             comp_df,
-            model_names,
+            interval_model_names,
             line_names,
             output_path,
         )
@@ -212,7 +253,7 @@ def collect_tasks_for_folder(
             "Conformal plots like STL",
             conf_plots_like_stl,
             ts_df,
-            model_names,
+            interval_model_names,
             line_names,
             threshold,
             output_path,
@@ -224,7 +265,7 @@ def collect_tasks_for_folder(
         safety_dir = os.path.join(plots_folder, "individual_cp_plots_like_stl")
         _ensure_dir_with_ext(safety_dir)
 
-        for model in model_names:
+        for model in interval_model_names:
             # replace spaces with underscores because of filenames (when necessary)
             safe_name = model.replace(" ", "_")
             add_task(
@@ -247,13 +288,13 @@ def collect_tasks_for_folder(
             )
 
     # horizon analysis (coverage and width by forecast horizon)
-    if horizon_df is not None:
+    if horizon_df is not None and interval_model_names:
         output_path = os.path.join(plots_folder, outputs["horizon"])
         add_task(
             "Horizon",
             horizon_plots,
             horizon_df,
-            model_names,
+            interval_model_names,
             target_coverage,
             output_path,
         )
@@ -358,15 +399,39 @@ def collect_aggregated_tasks(
     model_names = get_model_names(config)
 
     if comp_csv:
-        output_path = os.path.join(plots_folder, outputs["aggregated_comparison"])
-        add_task(
-            "Aggregated Comparison",
-            aggregated_comparison_plots,
-            comp_csv,
-            model_names,
-            config_csv_path,
-            output_path,
+        comp_df = load_csv(comp_csv)
+        metric_cols = (
+            [
+                col
+                for col in [
+                    "coverage_mean",
+                    "width_mean",
+                    "action_inf_coverage_mean",
+                ]
+                if comp_df is not None and col in comp_df.columns
+            ]
+            if comp_df is not None
+            else []
         )
+        has_metric_data = (
+            comp_df is not None
+            and bool(metric_cols)
+            and comp_df[metric_cols].notna().any().any()
+        )
+        output_path = os.path.join(plots_folder, outputs["aggregated_comparison"])
+        if has_metric_data:
+            add_task(
+                "Aggregated Comparison",
+                aggregated_comparison_plots,
+                comp_csv,
+                model_names,
+                config_csv_path,
+                output_path,
+            )
+        else:
+            print(
+                f"Skipping aggregated comparison plots: no numeric conformal metrics in {comp_csv}"
+            )
 
     # aggregated classification (STL)
     stl_csv = _get_path(

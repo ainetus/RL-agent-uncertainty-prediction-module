@@ -136,7 +136,7 @@ def model_training_worker(
             alpha=alpha,
         )
 
-        if model is not None:
+        if model is not None and model.is_trained():
             # we save the model after training
             print(f"  {model_name}: Training complete, saving to cache...")
             data_manager.save_model(model_name, n_episodes, model, alpha)
@@ -144,7 +144,7 @@ def model_training_worker(
                 model_name=model_name, trained_model=model, success=True
             )
         else:
-            print(f"  {model_name}: failed to create")
+            print(f"  {model_name}: failed to create a trained predictor")
             return ModelTrainingWorkerReturn(
                 model_name=model_name, trained_model=None, success=False
             )
@@ -258,6 +258,22 @@ def run_parallel_jobs(
 
     results = []
     successful = 0
+
+    if max_workers <= 1:
+        with tqdm(total=len(job_args_list), desc=desc, unit="job") as pbar:
+            for job_args in job_args_list:
+                try:
+                    result = worker_func(job_args)
+                    successful += 1
+                    results.append(result)
+                except Exception as e:
+                    print(f"Job failed: {e}")
+
+                pbar.update(1)
+
+        gc.collect()
+        print(f"Parallel jobs completed: {successful}/{len(job_args_list)} successful")
+        return results
 
     with mp.Pool(processes=max_workers, maxtasksperchild=1) as pool:
         with tqdm(total=len(job_args_list), desc=desc, unit="job") as pbar:

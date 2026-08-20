@@ -1,4 +1,4 @@
-setuptools==69.5.1
+setuptools>=69.5.1,<81
 pyarrow==14.0.1
 pydantic==1.10.26
 typer==0.9.4
@@ -8,8 +8,8 @@ grid2op==1.10.5
 numba==0.59.1
 joblib==1.5.0
 lightsim2grid==0.8.2
-ray[tune,rllib]==2.9.0
-tensorflow==2.13.0
+ray[tune,rllib]==2.10.0
+tensorflow==2.12.1
 gymnasium==0.28.1
 scikit-image==0.25.2
 scikit-learn==1.5.0
